@@ -115,7 +115,7 @@ export default function WebDashboard() {
               La extensión te da acceso completo a todas las funcionalidades
               de CambioKPI desde tu navegador.
             </p>
-            <a href="#" className="btn-primary inline-flex items-center gap-2">
+            <a href="https://github.com/AndresCdo/cambiokpi/releases/latest" target="_blank" rel="noopener noreferrer" className="btn-primary inline-flex items-center gap-2">
               Instalar Extensión
             </a>
           </div>

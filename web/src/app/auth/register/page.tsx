@@ -62,7 +62,9 @@ export default function RegisterPage() {
           </p>
           <div className="space-y-3">
             <a
-              href="#"
+              href="https://github.com/AndresCdo/cambiokpi/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
               className="btn-primary block text-center"
             >
               Descargar Extensión de Chrome
