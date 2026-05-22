@@ -1,0 +1,16 @@
+{
+  "name": "cambiokpi",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CambioKPI - Gestión de operaciones P2P para cambistas profesionales",
+  "scripts": {
+    "dev:web": "npm run dev --prefix web",
+    "dev:extension": "npm run dev --prefix extension",
+    "build:web": "npm run build --prefix web",
+    "build:extension": "npm run build --prefix extension",
+    "format": "prettier --write ."
+  },
+  "keywords": ["p2p", "crypto", "exchange", "kpi", "management"],
+  "author": "CambioKPI",
+  "license": "MIT"
+}
