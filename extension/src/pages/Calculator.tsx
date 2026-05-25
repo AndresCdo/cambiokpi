@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Calculator as CalcIcon, Copy, Loader2, RefreshCw } from "lucide-react";
+import { Calculator as CalcIcon, Copy, Loader2, RefreshCw, Share2, Send } from "lucide-react";
 import { supabase, getCache, setCache, getOperatorId } from "../services/supabase";
 import { getRate } from "../services/ratesService";
 import { calculateProfit, formatCurrency } from "../utils/calculations";
@@ -41,7 +41,9 @@ export default function Calculator({ session, showToast, onNavigate }: Calculato
   const [marginPercent, setMarginPercent] = useState(1.5);
   const [marginLoading, setMarginLoading] = useState(false);
   const [showRegisterForm, setShowRegisterForm] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [publicLink, setPublicLink] = useState("");
 
   // Register form state
   const [clientName, setClientName] = useState("");
@@ -163,14 +165,29 @@ export default function Calculator({ session, showToast, onNavigate }: Calculato
   }
 
   async function copyPublicLink() {
-    const operatorId = await getOperatorId();
-    const link = `${APP_URL}/r/${operatorId}`;
+    const opId = await getOperatorId();
+    const link = `${APP_URL}/r/${opId}`;
+    setPublicLink(link);
     try {
       await navigator.clipboard.writeText(link);
       showToast("Link copiado al portapapeles", "success");
     } catch {
       showToast("No se pudo copiar. Link: " + link, "error");
     }
+  }
+
+  function shareWhatsApp() {
+    const text = encodeURIComponent(
+      `Hola! Envíame ${numAmount || "___"} ${SOURCE_CURRENCIES[pair]} y recibe USDT al mejor precio.\n\nCompleta tus datos aquí:\n${publicLink}`
+    );
+    window.open(`https://wa.me/?text=${text}`, "_blank");
+  }
+
+  function shareTelegram() {
+    const text = encodeURIComponent(
+      `Hola! Envíame ${numAmount || "___"} ${SOURCE_CURRENCIES[pair]} y recibe USDT al mejor precio.\n\nCompleta tus datos aquí:\n${publicLink}`
+    );
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(publicLink)}&text=${text}`, "_blank");
   }
 
   function handleMarginChange(value: string) {
@@ -321,94 +338,152 @@ export default function Calculator({ session, showToast, onNavigate }: Calculato
       )}
 
       {/* Actions */}
-      {numAmount > 0 && rate && (
-        <div className="space-y-2">
-          {!showRegisterForm ? (
+      <div className="space-y-2">
+        {/* Share with client - always visible, prominent */}
+        <div className="card-dark p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <Share2 size={14} className="text-primary" />
+            <span className="text-xs font-semibold text-text-primary">
+              Enviar link al cliente
+            </span>
+          </div>
+          <p className="text-[10px] text-text-secondary leading-relaxed">
+            Tu cliente llena sus datos en el formulario y la solicitud aparece
+            automáticamente en tu panel. Tú solo aceptas y listo.
+          </p>
+
+          {!showShare ? (
             <button
-              onClick={() => setShowRegisterForm(true)}
-              className="btn-primary-ext w-full"
+              onClick={async () => {
+                const opId = await getOperatorId();
+                setPublicLink(`${APP_URL}/r/${opId}`);
+                setShowShare(true);
+              }}
+              className="btn-primary-ext w-full flex items-center justify-center gap-1.5 text-xs"
             >
-              <CalcIcon size={16} className="inline mr-2" />
-              Registrar operación
+              <Send size={14} />
+              Compartir link de solicitud
             </button>
           ) : (
-            <form onSubmit={handleRegister} className="card-dark p-3 space-y-3">
-              <h3 className="text-sm font-semibold text-text-primary">
-                Registrar operación
-              </h3>
-
-              <div>
-                <label className="text-[10px] text-text-secondary block mb-1">
-                  Nombre del cliente
-                </label>
+            <div className="space-y-2 pt-1">
+              {/* Link display */}
+              <div className="bg-surface rounded-lg p-2 flex items-center gap-2">
                 <input
                   type="text"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  className="input-dark text-sm"
-                  placeholder="Opcional"
+                  readOnly
+                  value={publicLink}
+                  className="bg-transparent text-[11px] text-text-primary flex-1 truncate outline-none"
                 />
-              </div>
-
-              <div>
-                <label className="text-[10px] text-text-secondary block mb-1">
-                  Método de pago
-                </label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="select-dark text-sm"
+                <button
+                  onClick={copyPublicLink}
+                  className="text-primary hover:text-primary-hover flex-shrink-0"
+                  title="Copiar link"
                 >
-                  {PAYMENT_METHODS.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
+                  <Copy size={14} />
+                </button>
               </div>
 
-              <div>
-                <label className="text-[10px] text-text-secondary block mb-1">
-                  Notas
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="input-dark text-sm resize-none"
-                  rows={2}
-                  placeholder="Opcional"
-                />
-              </div>
-
+              {/* Quick share buttons */}
               <div className="flex gap-2">
                 <button
-                  type="submit"
-                  disabled={saving}
-                  className="btn-primary-ext flex-1 flex items-center justify-center gap-1"
+                  onClick={shareWhatsApp}
+                  className="flex-1 bg-[#25D366]/15 text-[#25D366] hover:bg-[#25D366]/25 rounded-lg py-2 text-[11px] font-medium transition-colors flex items-center justify-center gap-1"
                 >
-                  {saving && <Loader2 size={14} className="animate-spin" />}
-                  {saving ? "Guardando..." : "Confirmar"}
+                  WhatsApp
                 </button>
                 <button
-                  type="button"
-                  onClick={() => setShowRegisterForm(false)}
-                  className="btn-secondary-ext"
+                  onClick={shareTelegram}
+                  className="flex-1 bg-[#0088cc]/15 text-[#0088cc] hover:bg-[#0088cc]/25 rounded-lg py-2 text-[11px] font-medium transition-colors flex items-center justify-center gap-1"
                 >
-                  Cancelar
+                  Telegram
                 </button>
               </div>
-            </form>
+            </div>
           )}
-
-          <button
-            onClick={copyPublicLink}
-            className="btn-ghost-ext w-full text-xs flex items-center justify-center gap-1.5"
-          >
-            <Copy size={14} />
-            Copiar link de solicitud
-          </button>
         </div>
-      )}
+
+        {/* Manual register */}
+        {numAmount > 0 && rate && (
+          <>
+            {!showRegisterForm ? (
+              <button
+                onClick={() => setShowRegisterForm(true)}
+                className="btn-secondary-ext w-full flex items-center justify-center gap-1.5"
+              >
+                <CalcIcon size={14} />
+                Registrar operación manual
+              </button>
+            ) : (
+              <form onSubmit={handleRegister} className="card-dark p-3 space-y-3">
+                <h3 className="text-sm font-semibold text-text-primary">
+                  Registrar operación
+                </h3>
+
+                <div>
+                  <label className="text-[10px] text-text-secondary block mb-1">
+                    Nombre del cliente
+                  </label>
+                  <input
+                    type="text"
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    className="input-dark text-sm"
+                    placeholder="Opcional"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-text-secondary block mb-1">
+                    Método de pago
+                  </label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="select-dark text-sm"
+                  >
+                    {PAYMENT_METHODS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-text-secondary block mb-1">
+                    Notas
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="input-dark text-sm resize-none"
+                    rows={2}
+                    placeholder="Opcional"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="btn-primary-ext flex-1 flex items-center justify-center gap-1"
+                  >
+                    {saving && <Loader2 size={14} className="animate-spin" />}
+                    {saving ? "Guardando..." : "Confirmar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowRegisterForm(false)}
+                    className="btn-secondary-ext"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
