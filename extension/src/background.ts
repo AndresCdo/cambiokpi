@@ -1,9 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
+// CambioKPI Background Service Worker
+// Uses raw fetch to avoid bundling supabase-js (which requires document/localStorage)
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const SUPABASE_URL = "https://vriebbqwkpyrnbreqakt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZyaWViYnF3a3B5cm5icmVxYWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0NDc1ODYsImV4cCI6MjA5NTAyMzU4Nn0.mXJpByfy6lxG5hPCuTOjQWaGLrfWmO8JdzCA7AtxxU8";
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const REST_URL = `${SUPABASE_URL}/rest/v1`;
 
 // Install: set up alarm
 chrome.runtime.onInstalled.addListener(() => {
@@ -11,7 +12,6 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log("[CambioKPI] Background worker installed, alarm set every 5 min");
 });
 
-// Also set alarm on startup
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create("check_requests", { periodInMinutes: 5 });
 });
@@ -23,90 +23,107 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-// Optional: also check on messages from popup
+// Handle messages from popup
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "CHECK_REQUESTS") {
-    checkPendingRequests();
-    sendResponse({ ok: true });
+    checkPendingRequests().then(() => sendResponse({ ok: true }));
+    return true;
   }
-  return true;
 });
 
-async function checkPendingRequests() {
+async function getStoredSession(): Promise<any | null> {
   try {
-    // Get session from storage
     const result = await chrome.storage.local.get("cambiokpi_session");
     const stored = result["cambiokpi_session"];
-    if (!stored) {
-      console.log("[CambioKPI] No session stored, skipping check");
-      return;
-    }
+    if (!stored) return null;
 
     const session = typeof stored === "string" ? JSON.parse(stored) : stored;
 
     // Check if expired
     if (session.expires_at && session.expires_at * 1000 < Date.now()) {
-      console.log("[CambioKPI] Session expired, attempting refresh");
-
+      // Try to refresh
       if (session.refresh_token) {
-        const { data, error } = await supabase.auth.refreshSession({
-          refresh_token: session.refresh_token,
-        });
-
-        if (error || !data.session) {
-          console.log("[CambioKPI] Refresh failed:", error?.message);
-          await chrome.storage.local.remove("cambiokpi_session");
-          return;
-        }
-
-        // Save new session
-        await chrome.storage.local.set({
-          cambiokpi_session: JSON.stringify(data.session),
-        });
-        console.log("[CambioKPI] Session refreshed");
-      } else {
-        await chrome.storage.local.remove("cambiokpi_session");
-        return;
+        const refreshed = await refreshSession(session.refresh_token);
+        if (refreshed) return refreshed;
       }
+      await chrome.storage.local.remove("cambiokpi_session");
+      return null;
     }
 
-    // Set the session
-    const currentSession = (await chrome.storage.local.get("cambiokpi_session"))[
-      "cambiokpi_session"
-    ];
-    const parsedSession =
-      typeof currentSession === "string"
-        ? JSON.parse(currentSession)
-        : currentSession;
-    supabase.auth.setSession(parsedSession);
+    return session;
+  } catch {
+    return null;
+  }
+}
 
-    const operatorId = parsedSession?.user?.id;
-    if (!operatorId) return;
+async function refreshSession(refreshToken: string): Promise<any | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
 
-    // Check for pending requests
-    const { data, error } = await supabase
-      .from("client_requests")
-      .select("count", { count: "exact", head: true })
-      .eq("operator_id", operatorId)
-      .eq("status", "pending");
+    if (!res.ok) return null;
 
-    if (error) {
-      console.log("[CambioKPI] Error checking requests:", error.message);
+    const data = await res.json();
+    if (data.access_token && data.refresh_token) {
+      await chrome.storage.local.set({
+        cambiokpi_session: JSON.stringify(data),
+      });
+      return data;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function checkPendingRequests() {
+  try {
+    const session = await getStoredSession();
+    if (!session) {
+      console.log("[CambioKPI] No valid session stored, skipping check");
       return;
     }
 
-    const count = (data as any)?.length ?? 0;
+    const operatorId = session.user?.id;
+    if (!operatorId) return;
+
+    // Query pending requests count using REST API
+    const url = `${REST_URL}/client_requests?operator_id=eq.${operatorId}&status=eq.pending&select=count`;
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      console.log("[CambioKPI] Error checking requests:", res.status);
+      return;
+    }
+
+    const data = await res.json();
+    const count = Array.isArray(data) ? data.length : 0;
 
     // Check last notified count
     const lastNotified = await chrome.storage.local.get("last_notified_count");
     const prevCount = lastNotified["last_notified_count"] || 0;
 
     if (count > prevCount) {
+      const newCount = count - prevCount;
       chrome.notifications.create("new_request", {
         type: "basic",
         iconUrl: "icons/icon-48.png",
         title: "CambioKPI",
-        message: `Nueva solicitud de cliente recibida (${count - prevCount} nueva${count - prevCount > 1 ? "s" : ""})`,
+        message: `Nueva solicitud de cliente recibida (${newCount} nueva${newCount > 1 ? "s" : ""})`,
         priority: 2,
       });
     }
