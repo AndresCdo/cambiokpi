@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "CambioKPI",
-  "version": "1.0.0",
-  "version_name": "1.0.0",
+  "version": "1.1.0",
+  "version_name": "1.1.0",
   "description": "Gestión de operaciones P2P para cambistas profesionales",
   "author": { "email": "andres@cambiokpi.com" },
   "homepage_url": "https://web-phi-seven-21.vercel.app",
